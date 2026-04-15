@@ -1,0 +1,47 @@
+نکات نمودار ها و مکان انها انها:
+
+
+Temperature_U_Curve مکان قرار گیری نمودار :
+Weather Correlation بجای نمودار Historical Analysis و در بخش 
+
+
+Predict_vs_Real_Line مکان قرار گیری نمودار :
+بجای نمودار اول صفحهoverview در بخش 
+Actual vs Predicted بجای نمودار Model Performance و در بخش 
+
+
+Monthly_Energy_Bar مکان قرار گیری نمودار :
+Temperature vs Demand و بجای نمودار overview در بخش 
+
+
+model_comparison مکان قرار گیری نمودار :
+Model Comparison و بجای نمودار Model Performance در بخش 
+
+
+MAPE_Scatter مکان قرار گیری نمودار :
+Error Distribution و بجای نمودار Model Performance در بخش 
+
+
+Hourly_Trend مکان قرار گیری نمودار :
+Daily Load Pattern و بجای نمودار overview در بخش 
+
+
+Full_Energy_TimeSeries مکان قرار گیری نمودار :
+Historical Demand Trend بجای نمودار Historical Analysis و در بخش 
+
+
+Energy_Range_Pie مکان قرار گیری نمودار :
+*نوشته این نمودار باید تغییر کند تا بیانگر دیتای قدیمی باشد نه پیش بینی شده
+Forecast Status Distribution و بجای نمودار Forecasting در بخش 
+
+
+Daily_Trend مکان قرار گیری نمودار :
+Weekly Trend و بجای نمودار overview در بخش 
+
+
+Calculated_Feature_Importance مکان قرار گیری نمودار :
+Demand Drivers و بجای نمودار Forecasting در بخش 
+
+
+Annotated_Month_Hour_Heatmap_Importance مکان قرار گیری نمودار :
+Consumption Heatmap بجای نمودار Historical Analysis و در بخش 

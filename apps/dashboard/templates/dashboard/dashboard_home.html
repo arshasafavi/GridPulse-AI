@@ -1,0 +1,316 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+
+{% block title %}Overview | GridPulse AI{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div class="row g-3 align-items-center">
+        <div class="col-12 col-xl-5">
+            <h1 class="page-title">Energy Demand Overview</h1>
+            <p class="page-subtitle">
+                Real-time monitoring, AI forecasting, and scenario-aware energy insights for {{ selected_city }}.
+            </p>
+        </div>
+
+        <div class="col-12 col-xl-7">
+            <div class="row g-2 justify-content-xl-end">
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <select id="rangeSelect" class="form-select glass-chip">
+                        <option value="last_6">Last 6 Hours</option>
+                        <option value="last_12">Last 12 Hours</option>
+                        <option value="last_24" selected>Last 24 Hours</option>
+                        <option value="last_48">Last 48 Hours</option>
+                        <option value="last_72">Last 72 Hours</option>
+                        <option value="last_96">Last 4 Days</option>
+                        <option value="last_168">Last 7 Days</option>
+                        <option value="next_24">Next 24 Hours</option>
+                        <option value="next_48">Next 48 Hours</option>
+                        <option value="next_72">Next 72 Hours</option>
+                        <option value="next_168">Next 7 Days</option>
+                        <option value="next_240">Next 10 Days</option>
+                        <option value="next_336">Next 2 Weeks</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-3">
+                    <button id="refreshDashboardBtn" class="btn btn-primary w-100 action-btn d-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        Refresh
+                    </button>
+                </div>
+
+                <div class="col-6 col-lg-3">
+                    <div class="glass-chip d-flex align-items-center justify-content-center">
+                        <small class="text-muted fw-semibold" id="updatedAtValue">
+                            Updated: {{ updated_at|default:"14:35" }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-primary">
+            <div class="metric-icon">
+                <i class="bi bi-lightning-charge"></i>
+            </div>
+            <div class="metric-label">Current Demand</div>
+            <div class="metric-value" id="kpiCurrentDemand">- MWh</div>
+            <div class="metric-trend" id="kpiCurrentChange">
+                <i class="bi bi-arrow-up-right"></i> - vs previous hour
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-success">
+            <div class="metric-icon">
+                <i class="bi bi-activity"></i>
+            </div>
+            <div class="metric-label">Peak Forecast Today</div>
+            <div class="metric-value" id="kpiPeakForecast">- MWh</div>
+            <div class="metric-trend" id="kpiPeakHour">
+                Expected at -
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-warning">
+            <div class="metric-icon">
+                <i class="bi bi-calendar-week"></i>
+            </div>
+            <div class="metric-label">Daily Average</div>
+            <div class="metric-value" id="kpiDailyAverage">- MWh</div>
+            <div class="metric-trend">
+                Based on recent 24h demand
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-info">
+            <div class="metric-icon">
+                <i class="bi bi-cloud-sun"></i>
+            </div>
+            <div class="metric-label">Temperature / Day Type</div>
+            <div class="metric-value" id="kpiTemperature">-°C</div>
+            <div class="metric-trend" id="kpiDayType">
+                - • -
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-xxl-8">
+        <div class="card-soft section-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                    <h2 class="section-title">Predicted Demand Forecast</h2>
+                    <p class="section-subtitle">
+                        AI-based hourly forecast for future demand only.
+                    </p>
+                </div>
+                <span class="badge-soft" id="forecastHorizonBadge">Next 24 Hours</span>
+            </div>
+
+            <div id="mainForecastChart" class="chart-host">
+                <div class="chart-placeholder">
+                    Main Plotly chart goes here<br />
+                    (Predicted Consumption)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xxl-4">
+        <div class="card-soft section-card h-100">
+            <div>
+                <h2 class="section-title">Quick Insights</h2>
+                <p class="section-subtitle">
+                    Key operational indicators extracted from forecast outputs.
+                </p>
+            </div>
+
+            <div class="insight-list">
+                <div class="insight-item">
+                    <span class="insight-label">Peak Hour</span>
+                    <span class="insight-value" id="insightPeakHour">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Lowest Demand</span>
+                    <span class="insight-value" id="insightLowestHour">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Demand Trend</span>
+                    <span class="insight-value" id="insightDemandTrend">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Weather Effect</span>
+                    <span class="insight-value" id="insightWeatherEffect">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Holiday Impact</span>
+                    <span class="insight-value" id="insightHolidayImpact">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Model Confidence</span>
+                    <span class="insight-value" id="insightModelConfidence">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Daily Load Pattern</h2>
+                <p class="section-subtitle">
+                    Hourly electricity consumption profile across the day.
+                </p>
+            </div>
+            <div id="dailyLoadPattern" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Hourly_Trend.html' %}"
+                    title="Hourly Trend"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:500px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Temperature vs Demand</h2>
+                <p class="section-subtitle">
+                    Relationship between average temperature and consumption.
+                </p>
+            </div>
+            <div id="tempDemandChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Monthly_Energy_Bar.html' %}"
+                    title="Monthly Energy Bar"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:450px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Weekly Trend</h2>
+                <p class="section-subtitle">
+                    Short-term demand trajectory and weekday pattern changes.
+                </p>
+            </div>
+            <div id="weeklyTrendChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Daily_Trend.html' %}"
+                    title="Daily Trend"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:450px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card-soft table-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                    <h2 class="section-title">Upcoming Forecast Snapshot</h2>
+                    <p class="section-subtitle">
+                        Structured forecast output for the next hours, ready for API integration.
+                    </p>
+                </div>
+                <button id="exportForecastCsvBtn" class="btn btn-outline-primary d-inline-flex align-items-center">
+                    <i class="bi bi-download me-2"></i>Export CSV
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table custom-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>DateTime</th>
+                            <th>Predicted Demand</th>
+                            <th>Historical Mean</th>
+                            <th>Diff</th>
+                            <th>Diff %</th>
+                            <th>Temperature</th>
+                            <th>Humidity</th>
+                            <th>Holiday</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="forecastTableBody">
+                        {% for row in forecast_rows %}
+                        <tr>
+                            <td>{{ row.datetime }}</td>
+                            <td>{{ row.predicted_demand }} MWh</td>
+                            <td>{% if row.historical_mean %}{{ row.historical_mean }} MWh{% else %}-{% endif %}</td>
+                            <td>{% if row.diff is not None %}{{ row.diff }}{% else %}-{% endif %}</td>
+                            <td>{% if row.diff_pct is not None %}{{ row.diff_pct }}%{% else %}-{% endif %}</td>
+                            <td>{{ row.temperature }}°C</td>
+                            <td>{{ row.humidity }}%</td>
+                            <td>{% if row.is_holiday %}Yes{% else %}No{% endif %}</td>
+                            <td>
+                                {% if row.status == "Peak" %}
+                                    <span class="badge-status-peak">Peak</span>
+                                {% elif row.status == "Low Load" %}
+                                    <span class="badge-status-low">Low Load</span>
+                                {% else %}
+                                    <span class="badge-status-normal">{{ row.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center py-4">No forecast data available</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="footer-note">
+    GridPulse AI Dashboard • Responsive Django Template • Ready for API + Plotly Integration
+</p>
+{% endblock %}
+
+{% block vendor_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.dashboardConfig = {
+        city: "Izmir",
+        overviewApiUrl: "{% url 'api:overview' %}",
+        forecastApiUrl: "{% url 'api:forecast' %}",
+        forecastExportUrl: "{% url 'api:forecast_export_csv' %}",
+        metricsApiUrl: "{% url 'api:metrics' %}"
+    };
+</script>
+{% endblock %}

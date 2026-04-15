@@ -1,0 +1,378 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Scenario Simulation | GridPulse AI{% endblock %}
+
+{% block extra_css %}
+<style>
+#scenarioComparisonChart {
+    min-height: 360px;
+    height: 360px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.scenario-hero {
+    background: linear-gradient(145deg, rgba(31, 79, 216, 0.06), rgba(14, 165, 233, 0.04));
+    border: 1px solid rgba(31, 79, 216, 0.12);
+}
+
+.scenario-top-controls {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.scenario-control-pill-fixed {
+    min-height: 142px;
+}
+
+.scenario-model-help {
+    margin-top: 8px;
+    font-size: 0.86rem;
+    color: var(--muted);
+}
+
+.scenario-control-pill {
+    background: linear-gradient(180deg, #ffffff, #f8fbff);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+}
+
+.scenario-slider-shell {
+    background: linear-gradient(180deg, #ffffff, #fbfdff);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px;
+}
+
+.scenario-muted-note {
+    font-size: 0.88rem;
+    color: var(--muted);
+}
+
+.scenario-textarea {
+    min-height: 144px;
+    resize: vertical;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 0.85rem;
+}
+
+.scenario-description {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, #ffffff, #f9fcff);
+    border-radius: 14px;
+    padding: 14px;
+}
+
+/* Local red variant for risk card when scenario risk is high */
+.metric-danger::after { background: #fee2e2; }
+.metric-danger .metric-icon { background: #fee2e2; color: #b91c1c; }
+
+@media (max-width: 991.98px) {
+    .scenario-top-controls {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar scenario-hero">
+    <div class="row g-3 align-items-center">
+        <div class="col-12">
+            <h1 class="page-title">Scenario Simulation</h1>
+            <p class="page-subtitle mb-1">
+                Model-based simulation with real forecast data. Select a model and horizon, then run.
+            </p>
+        </div>
+        <div class="col-12">
+            <div class="scenario-top-controls">
+                <div class="scenario-control-pill scenario-control-pill-fixed">
+                    <label for="scenarioModelSelect" class="form-label fw-semibold mb-2">Prediction Model</label>
+                    <select id="scenarioModelSelect" class="form-select glass-chip">
+                        <option value="model_24" selected>model_24 (accurate hourly data, up to 2 weeks)</option>
+                        <option value="model_no_timeseries">model_no_timeseries (long horizon + slider overrides)</option>
+                    </select>
+                    <div id="scenarioModelHelp" class="scenario-model-help">
+                        Use this for real hourly forecasts up to 2 weeks. Only choose a time range and run.
+                    </div>
+                </div>
+
+                <div class="scenario-control-pill scenario-control-pill-fixed">
+                    <label for="scenarioHorizonSelect" class="form-label fw-semibold mb-2">Time Range</label>
+                    <select id="scenarioHorizonSelect" class="form-select glass-chip">
+                        <option value="24" selected>Next 24 Hours</option>
+                        <option value="72">Next 72 Hours</option>
+                        <option value="168">Next 7 Days</option>
+                        <option value="336">Next 2 Weeks</option>
+                    </select>
+                </div>
+
+                <div>
+                    <button id="runScenarioBtn" class="btn btn-primary action-btn d-flex align-items-center justify-content-center gap-2 w-100">
+                        <i class="bi bi-play-circle"></i>
+                        <span>Run Scenario</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row g-4 mb-4">
+    <div class="col-12 col-xl-4">
+        <div class="card-soft section-card h-100">
+            <div class="mb-3">
+                <h2 class="section-title">Scenario Controls (model_no_timeseries)</h2>
+                <p class="section-subtitle">
+                    These controls are only used when model_no_timeseries is selected.
+                </p>
+            </div>
+
+            <div id="scenarioSliderGroup" class="scenario-slider-shell">
+                <div class="mb-4">
+                    <label for="ntsInputMode" class="form-label fw-semibold">Input Mode</label>
+                    <select id="ntsInputMode" class="form-select glass-chip">
+                        <option value="single" selected>Single weather setup for selected range</option>
+                        <option value="per_time">Custom values per timestamp/hour (multiple rows)</option>
+                    </select>
+                </div>
+
+                <div id="ntsSingleControls">
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">Prediction Start Date &amp; Time</label>
+                    <div class="d-flex gap-2">
+                        <input type="date" class="form-control glass-chip" id="ntsStartDate" style="flex:2">
+                        <select class="form-select glass-chip" id="ntsStartHour" style="flex:1">
+                            <option value="0">00:00</option>
+                            <option value="1">01:00</option>
+                            <option value="2">02:00</option>
+                            <option value="3">03:00</option>
+                            <option value="4">04:00</option>
+                            <option value="5">05:00</option>
+                            <option value="6">06:00</option>
+                            <option value="7">07:00</option>
+                            <option value="8">08:00</option>
+                            <option value="9">09:00</option>
+                            <option value="10">10:00</option>
+                            <option value="11">11:00</option>
+                            <option value="12">12:00</option>
+                            <option value="13">13:00</option>
+                            <option value="14">14:00</option>
+                            <option value="15">15:00</option>
+                            <option value="16">16:00</option>
+                            <option value="17">17:00</option>
+                            <option value="18">18:00</option>
+                            <option value="19">19:00</option>
+                            <option value="20">20:00</option>
+                            <option value="21">21:00</option>
+                            <option value="22">22:00</option>
+                            <option value="23">23:00</option>
+                        </select>
+                    </div>
+                    <small class="scenario-muted-note">Forecast will start from this date &amp; hour. Defaults to now.</small>
+                </div>
+                <div class="mb-4">
+                    <label for="tempDeltaRange" class="form-label fw-semibold d-flex justify-content-between">
+                        <span>Temperature Delta</span>
+                        <span id="tempDeltaValue">+0°C</span>
+                    </label>
+                    <input type="range" class="form-range" id="tempDeltaRange" min="-12" max="12" step="1" value="0">
+                </div>
+
+                <div class="mb-4">
+                    <label for="humidityDeltaRange" class="form-label fw-semibold d-flex justify-content-between">
+                        <span>Humidity Delta</span>
+                        <span id="humidityDeltaValue">+0%</span>
+                    </label>
+                    <input type="range" class="form-range" id="humidityDeltaRange" min="-40" max="40" step="1" value="0">
+                </div>
+
+                <div class="mb-4">
+                    <label for="windDeltaRange" class="form-label fw-semibold d-flex justify-content-between">
+                        <span>Wind Speed Delta</span>
+                        <span id="windDeltaValue">+0 m/s</span>
+                    </label>
+                    <input type="range" class="form-range" id="windDeltaRange" min="-8" max="8" step="0.5" value="0">
+                </div>
+
+                <div class="mb-4">
+                    <label for="prcpDeltaRange" class="form-label fw-semibold d-flex justify-content-between">
+                        <span>Precipitation Delta</span>
+                        <span id="prcpDeltaValue">+0 mm</span>
+                    </label>
+                    <input type="range" class="form-range" id="prcpDeltaRange" min="-10" max="10" step="0.5" value="0">
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="form-check form-switch scenario-switch">
+                            <input class="form-check-input" type="checkbox" id="weekendSwitch">
+                            <label class="form-check-label fw-semibold" for="weekendSwitch">
+                                Simulate Weekend
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <p class="scenario-muted-note mt-3 mb-0">
+                    Sliders modify weather inputs used by model_no_timeseries for what-if outcomes.
+                </p>
+                </div>
+
+                <div id="ntsPerTimeControls" style="display:none;">
+                    <label for="ntsSeriesInput" class="form-label fw-semibold">Per-Time Input Rows</label>
+                    <textarea id="ntsSeriesInput" class="form-control scenario-textarea" placeholder="One row per timestamp (single row is allowed):
+2026-04-16T09:00:00,18,58,3.1,0.0,0
+2026-04-16T10:00:00,20,55,3.5,0.0,0
+
+Format:
+datetime,temperature_c,humidity_pct,wind_mps,precip_mm,is_holiday(0|1)"></textarea>
+                    <p class="scenario-muted-note mt-3 mb-0">
+                        For one-time prediction, enter only one row and set horizon to 1 hour.
+                    </p>
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div>
+                <h3 class="section-title mb-3">Scenario Summary</h3>
+                <div class="insight-list">
+                    <div class="insight-item">
+                        <span class="insight-label">Temperature Shift</span>
+                        <span class="insight-value" id="summaryTemp">-</span>
+                    </div>
+                    <div class="insight-item">
+                        <span class="insight-label">Humidity Shift</span>
+                        <span class="insight-value" id="summaryHumidity">-</span>
+                    </div>
+                    <div class="insight-item">
+                        <span class="insight-label">Weekend Mode</span>
+                        <span class="insight-value" id="summaryWeekend">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-8">
+        <div class="card-soft section-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                    <h2 class="section-title">Scenario Forecast</h2>
+                    <p class="section-subtitle">
+                        Scenario demand curve generated from selected model and inputs.
+                    </p>
+                </div>
+                <span class="badge-soft">Operational Decision Support</span>
+            </div>
+
+            <div id="scenarioComparisonChart" class="chart-host">
+                <div class="chart-placeholder">
+                    Running scenario...
+                </div>
+            </div>
+
+            <div class="scenario-description">
+                <h3 class="section-title mb-2">Important Scenario Description</h3>
+                <p id="scenarioNarrative" class="section-subtitle mb-0">
+                    Run a scenario to see an explainable summary of model choice, range, and demand profile.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card-soft metric-card metric-info">
+            <div class="metric-icon">
+                <i class="bi bi-graph-up-arrow"></i>
+            </div>
+            <div class="metric-label">Scenario Peak Demand</div>
+            <div class="metric-value" id="peakScenarioValue">- MWh</div>
+            <div class="metric-trend">Highest forecasted scenario load</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card-soft metric-card metric-warning">
+            <div class="metric-icon">
+                <i class="bi bi-graph-down-arrow"></i>
+            </div>
+            <div class="metric-label">Scenario Lowest Demand</div>
+            <div class="metric-value" id="lowestScenarioValue">- MWh</div>
+            <div class="metric-trend">Lowest forecasted scenario load</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div id="scenarioRiskCard" class="card-soft metric-card metric-success">
+            <div class="metric-icon">
+                <i class="bi bi-shield-check"></i>
+            </div>
+            <div class="metric-label">Operational Risk Level</div>
+            <div class="metric-value" id="riskLevelValue">-</div>
+            <div class="metric-trend">Estimated stress level on the grid</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card-soft table-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                    <h2 class="section-title">Scenario Output Snapshot</h2>
+                    <p class="section-subtitle">
+                        Real model outputs for scenario demand and operating conditions.
+                    </p>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table custom-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>DateTime</th>
+                            <th>Scenario Demand (MWh)</th>
+                            <th>Temperature (°C)</th>
+                            <th>Precip. (mm)</th>
+                            <th>Wind (m/s)</th>
+                            <th>Humidity (%)</th>
+                            <th>Hour</th>
+                            <th>Weekday</th>
+                            <th>Holiday</th>
+                            <th>Status</th>
+                            <th>Risk Flag</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scenarioTableBody">
+                        <tr>
+                            <td colspan="11" class="text-center py-4">Run a scenario to view output rows.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="footer-note">
+    GridPulse AI Scenario Module • Interactive Simulation • Ready for API Integration
+</p>
+{% endblock %}
+
+{% block vendor_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.scenarioConfig = {
+        scenarioApiUrl: "{% url 'api:scenario' %}"
+    };
+</script>
+{% endblock %}

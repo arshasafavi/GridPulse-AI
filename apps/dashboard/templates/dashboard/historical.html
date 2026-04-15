@@ -1,0 +1,362 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+
+{% block title %}Historical Analysis | GridPulse AI{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div class="row g-3 align-items-center">
+        <div class="col-12 col-xl-6">
+            <h1 class="page-title">Historical Analysis</h1>
+            <p class="page-subtitle">
+                Explore historical electricity consumption patterns, weather relationships, and time-based load behavior.
+            </p>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="row g-2 justify-content-xl-end">
+                <div class="col-12 col-sm-6 col-lg-6">
+                    <select id="historicalGranularitySelect" class="form-select glass-chip">
+                        <option value="hourly" selected>Hourly</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-6">
+                    <div class="d-grid gap-2">
+                        <button id="historicalApplyBtn" class="btn btn-primary action-btn d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-funnel"></i>
+                            Apply Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Historical Demand Trend</h2>
+                <p class="section-subtitle">
+                    Longitudinal view of energy demand over the selected time period.
+                </p>
+            </div>
+            <div id="historicalTrendChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Full_Energy_TimeSeries.html' %}"
+                    title="Full Energy Time Series"
+                    loading="lazy"
+                    style="width:100%;height:100%;min-height:360px;border:0;border-radius:12px;background:#fff;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Consumption Heatmap</h2>
+                <p class="section-subtitle">
+                    Hour-of-day and weekday load intensity view.
+                </p>
+            </div>
+            <div id="consumptionHeatmapChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Annotated_Month_Hour_Heatmap.html' %}"
+                    title="Annotated Month Hour Heatmap"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:560px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Weather Correlation</h2>
+                <p class="section-subtitle">
+                    Relationship between temperature and electricity demand.
+                </p>
+            </div>
+            <div id="historicalWeatherChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Temperature_U_Curve.html' %}"
+                    title="Temperature U Curve"
+                    loading="lazy"
+                    style="width:100%;height:100%;min-height:300px;border:0;border-radius:12px;background:#fff;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card-soft table-card">
+            <div class="mb-3 d-flex justify-content-between align-items-start">
+                <div>
+                    <h2 class="section-title">Historical Summary Table</h2>
+                    <p class="section-subtitle">
+                        Structured historical observations for inspection and export.
+                    </p>
+                </div>
+                <div class="ms-3">
+                    <button id="historicalExportBtn" class="btn btn-outline-secondary d-inline-flex align-items-center">
+                        <i class="bi bi-download me-2"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table custom-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>DateTime</th>
+                            <th>Consumption</th>
+                            <th>Temperature (°C)</th>
+                            <th>Precip. (mm)</th>
+                            <th>Wind (m/s)</th>
+                            <th>Humidity (%)</th>
+                            <th>Hour</th>
+                            <th>Weekday</th>
+                            <th>Holiday</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- rows populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block vendor_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    if (!window.Plotly) return;
+
+    const granSelect = document.getElementById('historicalGranularitySelect');
+    const applyBtn = document.getElementById('historicalApplyBtn');
+    const fixedCity = 'Izmir';
+
+    const loadHistorical = async () => {
+        try {
+            const gran = granSelect ? granSelect.value : 'hourly';
+            // request full historical table (client-side pagination)
+            const res = await fetch(`/api/historical/?city=${encodeURIComponent(fixedCity)}&granularity=${encodeURIComponent(gran)}`);
+            if (!res.ok) throw new Error('Historical API failed');
+            const data = await res.json();
+
+            // render trend (skip if container is static embedded chart)
+            const trend = data.trend || [];
+            const trendTarget = document.getElementById("historicalTrendChart");
+            if (trendTarget && trendTarget.dataset.staticChart !== "1") {
+                Plotly.newPlot("historicalTrendChart", [{
+                    x: trend.map(t => t.datetime),
+                    y: trend.map(t => t.value),
+                    type: "scatter",
+                    mode: "lines+markers",
+                    line: { width: 3 }
+                }], {
+                    margin: { t: 10, r: 10, b: 40, l: 50 },
+                    paper_bgcolor: "white",
+                    plot_bgcolor: "white",
+                    xaxis: { title: "Date" },
+                    yaxis: { title: "Demand (kWh)" }
+                }, { responsive: true, displayModeBar: false });
+            }
+
+            // heatmap (skip if container is static embedded chart)
+            const heat = data.heatmap || {x:[], y:[], z:[]};
+            const heatTarget = document.getElementById("consumptionHeatmapChart");
+            if (heatTarget && heatTarget.dataset.staticChart !== "1") {
+                Plotly.newPlot("consumptionHeatmapChart", [{
+                    z: heat.z,
+                    x: heat.x,
+                    y: heat.y,
+                    type: "heatmap"
+                }], {
+                    margin: { t: 10, r: 10, b: 40, l: 50 },
+                    paper_bgcolor: "white",
+                    plot_bgcolor: "white"
+                }, { responsive: true, displayModeBar: false });
+            }
+
+            // weather correlation (skip if container is static embedded chart)
+            const wc = data.weather_correlation || [];
+            const weatherTarget = document.getElementById("historicalWeatherChart");
+            if (weatherTarget && weatherTarget.dataset.staticChart !== "1") {
+                Plotly.newPlot("historicalWeatherChart", [{
+                    x: wc.map(p=>p.temperature),
+                    y: wc.map(p=>p.demand),
+                    mode: "markers",
+                    type: "scatter"
+                }], {
+                    margin: { t: 10, r: 10, b: 40, l: 50 },
+                    paper_bgcolor: "white",
+                    plot_bgcolor: "white",
+                    xaxis: { title: "Temperature (°C)" },
+                    yaxis: { title: "Demand (kWh)" }
+                }, { responsive: true, displayModeBar: false });
+            }
+
+            // populate table using client-side pagination
+            updateHistoricalTable(data.table || []);
+
+        } catch (err) {
+            console.error('Historical load error:', err);
+        }
+    };
+
+    if (applyBtn) applyBtn.addEventListener('click', loadHistorical);
+    // initial load
+    loadHistorical();
+
+    // Client-side pagination utilities for historical table
+    window.historicalCache = window.historicalCache || {};
+    window.historicalPageSize = window.historicalPageSize || 12;
+
+    function updateHistoricalTable(rows) {
+        window.historicalCache.rows = rows || [];
+        window.historicalCache.total = (rows || []).length;
+        renderHistoricalPage(1);
+    }
+
+    function renderHistoricalPage(page) {
+        const tbody = document.querySelector('.table-responsive table tbody');
+        if (!tbody) return;
+
+        const pageSize = window.historicalPageSize || 12;
+        const total = window.historicalCache.total || 0;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const current = Math.min(Math.max(1, page || 1), totalPages);
+
+        tbody.innerHTML = '';
+        if (!total) {
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4">No historical data available</td></tr>`;
+            renderHistoricalPagination(0, 0, 0);
+            return;
+        }
+
+        const start = (current - 1) * pageSize;
+        const pageItems = window.historicalCache.rows.slice(start, start + pageSize);
+        pageItems.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${(new Date(r.datetime)).toLocaleString()}</td>
+                <td>${Number(r.demand).toLocaleString()} kWh</td>
+                <td>${r.temperature !== undefined ? r.temperature + '°C' : '-'}</td>
+                <td>${r.precipitation !== undefined ? r.precipitation : '-'}</td>
+                <td>${r.wind_speed !== undefined ? r.wind_speed : '-'}</td>
+                <td>${r.humidity !== undefined ? r.humidity + '%' : '-'}</td>
+                <td>${r.hour !== undefined ? r.hour : '-'}</td>
+                <td>${r.weekday || '-'}</td>
+                <td>${r.is_holiday ? 'Yes' : 'No'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        renderHistoricalPagination(current, totalPages, total);
+    }
+
+    function renderHistoricalPagination(current, totalPages, totalItems) {
+        const tbody = document.querySelector('.table-responsive table tbody');
+        if (!tbody) return;
+        const table = tbody.closest('table');
+        if (!table) return;
+
+        let container = document.getElementById('historicalPaginationControls');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'historicalPaginationControls';
+            container.className = 'd-flex justify-content-between align-items-center mt-2';
+            table.parentNode.insertBefore(container, table.nextSibling);
+        }
+
+        if (!totalItems) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const prevDisabled = current <= 1 ? 'disabled' : '';
+        const nextDisabled = current >= totalPages ? 'disabled' : '';
+
+        container.innerHTML = `
+            <div class="d-flex align-items-center">
+                <div class="me-3">Showing ${(current-1)*window.historicalPageSize + 1} - ${Math.min(current*window.historicalPageSize, totalItems)} of ${totalItems}</div>
+                <div class="me-3">Page size:
+                    <select id="historicalPageSizeSelect" class="form-select form-select-sm d-inline-block ms-2" style="width: auto;"> 
+                        <option value="12" ${window.historicalPageSize==12? 'selected':''}>12</option>
+                        <option value="24" ${window.historicalPageSize==24? 'selected':''}>24</option>
+                        <option value="48" ${window.historicalPageSize==48? 'selected':''}>48</option>
+                        <option value="96" ${window.historicalPageSize==96? 'selected':''}>96</option>
+                    </select>
+                </div>
+            </div>
+            <div class="d-flex align-items-center">
+                <button id="historicalPrevBtn" class="btn btn-sm btn-outline-primary me-2" ${prevDisabled}>Prev</button>
+                <div id="historicalPageNumbers" class="btn-group me-2" role="group"></div>
+                <span class="mx-1">Page ${current} / ${totalPages}</span>
+                <button id="historicalNextBtn" class="btn btn-sm btn-outline-primary ms-2" ${nextDisabled}>Next</button>
+            </div>
+        `;
+
+        const prev = document.getElementById('historicalPrevBtn');
+        const next = document.getElementById('historicalNextBtn');
+        if (prev) prev.onclick = () => { if (current > 1) renderHistoricalPage(current - 1); };
+        if (next) next.onclick = () => { if (current < totalPages) renderHistoricalPage(current + 1); };
+
+        const pageSizeSelect = document.getElementById('historicalPageSizeSelect');
+        if (pageSizeSelect) {
+            pageSizeSelect.onchange = () => {
+                const newSize = Number(pageSizeSelect.value) || 12;
+                window.historicalPageSize = newSize;
+                renderHistoricalPage(1);
+            };
+        }
+
+        const pageNumbersEl = document.getElementById('historicalPageNumbers');
+        if (pageNumbersEl) {
+            pageNumbersEl.innerHTML = '';
+            const maxButtons = 7;
+            let startPage = Math.max(1, current - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+            if (endPage - startPage + 1 < maxButtons) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+
+            for (let p = startPage; p <= endPage; p++) {
+                const btn = document.createElement('button');
+                btn.className = `btn btn-sm ${p === current ? 'btn-primary' : 'btn-outline-secondary'}`;
+                btn.textContent = String(p);
+                btn.onclick = (() => { const pageNum = p; return () => renderHistoricalPage(pageNum); })();
+                pageNumbersEl.appendChild(btn);
+            }
+        }
+    }
+
+    // Export button wiring (query DOM here to avoid cross-script scope issues)
+    const exportBtnEl = document.getElementById('historicalExportBtn');
+    if (exportBtnEl) {
+        exportBtnEl.addEventListener('click', () => {
+            const url = new URL('/api/historical/export_csv/', window.location.origin);
+            url.searchParams.set('city', fixedCity);
+            window.location.href = url.toString();
+        });
+    }
+});
+</script>
+{% endblock %}

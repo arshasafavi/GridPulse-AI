@@ -1,0 +1,97 @@
+/api/overview/?city=Istanbul
+
+JSON:
+
+{
+  "city": "Istanbul",
+  "updated_at": "2026-03-09T14:00:00+00:00",
+  "kpis": {
+    "current_demand": 1842,
+    "current_change_pct": 4.2,
+    "peak_forecast": 2130,
+    "peak_hour": "19:00",
+    "daily_average": 1620,
+    "temperature": 18,
+    "day_type": "Weekday",
+    "weather_note": "Moderate humidity"
+  },
+  "insights": {
+    "peak_hour": "19:00",
+    "lowest_hour": "04:00",
+    "demand_trend": "Increasing",
+    "weather_effect": "Moderate",
+    "holiday_impact": "Low",
+    "model_confidence": "High"
+  },
+  "mini_charts": {
+    "daily_load_pattern": [],
+    "temperature_vs_demand": [],
+    "weekly_trend": []
+  }
+}
+
+/api/forecast/?city=Istanbul&horizon=24
+{
+  "city": "Istanbul",
+  "horizon": 24,
+  "generated_at": "2026-03-09T14:00:00+00:00",
+  "summary": {
+    "max_forecast_demand": 2064,
+    "min_forecast_demand": 1650,
+    "avg_forecast_demand": 1857.0,
+    "peak_time": "2026-03-10T13:00:00+00:00"
+  },
+  "predictions": [
+    {
+      "datetime": "2026-03-09T14:00:00+00:00",
+      "predicted_demand": 1650,
+      "temperature": 16,
+      "humidity": 55,
+      "is_holiday": false,
+      "status": "Normal"
+    }
+  ]
+}
+
+/api/scenario/
+
+entring:
+
+{
+  "city": "Istanbul",
+  "horizon": 24,
+  "temperature_delta": 5,
+  "humidity_delta": 10,
+  "wind_speed_delta": 2,
+  "precipitation_delta": 0,
+  "is_holiday": true,
+  "is_weekend": false
+}
+
+result:
+
+{
+  "city": "Istanbul",
+  "horizon": 24,
+  "generated_at": "2026-03-09T14:00:00+00:00",
+  "scenario_input": {
+    "temperature_delta": 5.0,
+    "humidity_delta": 10.0,
+    "wind_speed_delta": 2.0,
+    "precipitation_delta": 0.0,
+    "is_holiday": true,
+    "is_weekend": false
+  },
+  "summary": {
+    "baseline_peak": 2060,
+    "scenario_peak": 2198,
+    "peak_change_pct": 6.7,
+    "baseline_avg": 1830.0,
+    "scenario_avg": 1952.0,
+    "avg_change_pct": 6.67,
+    "risk_level": "Medium"
+  },
+  "baseline": [],
+  "scenario": [],
+  "table": []
+}

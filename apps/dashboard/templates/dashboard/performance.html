@@ -1,0 +1,485 @@
+﻿{% extends "dashboard/base.html" %}
+{% load static %}
+
+{% block title %}Model Performance | GridPulse AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.perf-compact-chart-card {
+    min-height: 420px;
+}
+.chart-scale-wrap {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div class="row g-3 align-items-center">
+        <div class="col-12 col-xl-6">
+            <h1 class="page-title">Model Performance</h1>
+            <p class="page-subtitle">
+                Real evaluation from historical test rows with side-by-side comparison of model_24 and model_no_timeseries.
+            </p>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="row g-2 justify-content-xl-end">
+                <div class="col-12 col-sm-8 col-lg-7">
+                    <select id="metricsModelSelect" class="form-select glass-chip">
+                        <option value="model_24" selected>model_24</option>
+                        <option value="model_no_timeseries">model_no_timeseries</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-sm-4 col-lg-5">
+                    <button id="refreshMetricsBtn" class="btn btn-primary w-100 action-btn d-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-arrow-repeat"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-primary">
+            <div class="metric-icon"><i class="bi bi-bullseye"></i></div>
+            <div class="metric-label">MAE</div>
+            <div class="metric-value" id="metricMaeValue">- MWh</div>
+            <div class="metric-trend">Mean Absolute Error</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-success">
+            <div class="metric-icon"><i class="bi bi-graph-up"></i></div>
+            <div class="metric-label">RMSE</div>
+            <div class="metric-value" id="metricRmseValue">- MWh</div>
+            <div class="metric-trend">Root Mean Squared Error</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-warning">
+            <div class="metric-icon"><i class="bi bi-percent"></i></div>
+            <div class="metric-label">MAPE</div>
+            <div class="metric-value" id="metricMapeValue">-%</div>
+            <div class="metric-trend">Mean Absolute Percentage Error</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-info">
+            <div class="metric-icon"><i class="bi bi-award"></i></div>
+            <div class="metric-label">R2 Score</div>
+            <div class="metric-value" id="metricR2Value">-</div>
+            <div class="metric-trend">Explained variance quality</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-warning">
+            <div class="metric-icon"><i class="bi bi-arrow-left-right"></i></div>
+            <div class="metric-label">Bias</div>
+            <div class="metric-value" id="metricBiasValue">- MWh</div>
+            <div class="metric-trend">Average prediction offset</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-2">
+        <div class="card-soft metric-card metric-info">
+            <div class="metric-icon"><i class="bi bi-exclamation-octagon"></i></div>
+            <div class="metric-label">Peak Error</div>
+            <div class="metric-value" id="metricPeakErrValue">- MWh</div>
+            <div class="metric-trend">Worst absolute error</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-xl-8">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Actual vs Predicted</h2>
+                <p class="section-subtitle">
+                    Real test-period demand (MWh) compared against the selected model.
+                </p>
+            </div>
+            <div id="performanceMainChart" class="chart-host" data-static-chart="1">
+                <div class="chart-placeholder">Loading model-specific CSV chart...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-4">
+        <div class="card-soft section-card h-100">
+            <div class="mb-3">
+                <h2 class="section-title">Evaluation Summary</h2>
+                <p class="section-subtitle">
+                    Interpretable insights generated from real evaluation outputs.
+                </p>
+            </div>
+
+            <div class="insight-list">
+                <div class="insight-item">
+                    <span class="insight-label">Best Performing Model</span>
+                    <span class="insight-value" id="bestModelValue">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Peak Error Window</span>
+                    <span class="insight-value" id="peakErrorWindowValue">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Forecast Stability</span>
+                    <span class="insight-value" id="forecastStabilityValue">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Generalization Quality</span>
+                    <span class="insight-value" id="generalizationValue">-</span>
+                </div>
+                <div class="insight-item">
+                    <span class="insight-label">Recommended Usage</span>
+                    <span class="insight-value" id="recommendedUsageValue">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card perf-compact-chart-card">
+            <div class="mb-3">
+                <h2 class="section-title">Error Distribution</h2>
+                <p class="section-subtitle">
+                    Histogram of residuals (Predicted - Actual) in MWh.
+                </p>
+            </div>
+            <div id="errorDistributionChart" class="chart-host" data-static-chart="1">
+                <!-- MAPE_Scatter internal height=650px, scaled to ~370px visual -->
+                <div class="chart-scale-wrap" style="height:370px;">
+                    <iframe
+                        src="{% static 'dashboard/charts/MAPE_Scatter.html' %}"
+                        title="MAPE Scatter"
+                        loading="lazy"
+                        scrolling="no"
+                        style="display:block;width:calc(100% / 0.57);height:650px;border:0;border-radius:12px;background:#fff;transform:scale(0.57);transform-origin:top left;"
+                    ></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card perf-compact-chart-card">
+            <div class="mb-3">
+                <h2 class="section-title">Model Comparison</h2>
+                <p class="section-subtitle">
+                    Real comparison of both project models 
+                </p>
+            </div>
+            <div id="modelComparisonChart" class="chart-host" data-static-chart="1">
+                <!-- model_comparison internal height=600px, scaled to ~370px visual -->
+                <div class="chart-scale-wrap" style="height:370px;">
+                    <iframe
+                        src="{% static 'dashboard/charts/model_comparison.html' %}"
+                        title="Model Comparison"
+                        loading="lazy"
+                        scrolling="no"
+                        style="display:block;width:calc(100% / 0.52);height:600px;border:0;border-radius:12px;background:#fff;transform:scale(0.52);transform-origin:top left;"
+                    ></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card-soft table-card">
+            <div class="mb-3">
+                <h2 class="section-title">Evaluation Samples</h2>
+                <p class="section-subtitle">
+                    Real examples from the evaluated period.
+                </p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table custom-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>DateTime</th>
+                            <th>Actual (MWh)</th>
+                            <th>Predicted (MWh)</th>
+                            <th>Absolute Error (MWh)</th>
+                            <th>Percentage Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metricsTableBody">
+                        <tr><td colspan="5">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="footer-note">
+    GridPulse AI Performance Module • Real Evaluation from Dataset • Model_24 vs Model_no_timeseries
+</p>
+{% endblock %}
+
+{% block vendor_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.metricsConfig = {
+        metricsApiUrl: "{% url 'api:metrics' %}",
+        csvPredUrl: "{% static 'dashboard/charts/predictions.csv' %}",
+        csvPred24Url: "{% static 'dashboard/charts/predictions_24.csv' %}"
+    };
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const apiUrl = (window.metricsConfig && window.metricsConfig.metricsApiUrl) || '/api/metrics/';
+
+    const modelSelect = document.getElementById('metricsModelSelect');
+    const refreshBtn = document.getElementById('refreshMetricsBtn');
+
+    const maeEl = document.getElementById('metricMaeValue');
+    const rmseEl = document.getElementById('metricRmseValue');
+    const mapeEl = document.getElementById('metricMapeValue');
+    const r2El = document.getElementById('metricR2Value');
+    const biasEl = document.getElementById('metricBiasValue');
+    const peakErrEl = document.getElementById('metricPeakErrValue');
+
+    const bestModelEl = document.getElementById('bestModelValue');
+    const peakErrorWindowEl = document.getElementById('peakErrorWindowValue');
+    const stabilityEl = document.getElementById('forecastStabilityValue');
+    const generalizationEl = document.getElementById('generalizationValue');
+    const recommendedUsageEl = document.getElementById('recommendedUsageValue');
+
+    const tableBody = document.getElementById('metricsTableBody');
+    const mainChart = document.getElementById('performanceMainChart');
+    const errorChart = document.getElementById('errorDistributionChart');
+    const comparisonChart = document.getElementById('modelComparisonChart');
+    const csvRowsCache = {
+        model_24: null,
+        model_no_timeseries: null,
+    };
+
+    function fmtNum(v, d=2) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return '-';
+        return n.toLocaleString(undefined, {maximumFractionDigits: d, minimumFractionDigits: d});
+    }
+
+    function setText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
+
+    function renderMainChart(series) {
+        const actual = Array.isArray(series.actual) ? series.actual : [];
+        const predicted = Array.isArray(series.predicted) ? series.predicted : [];
+        if (!actual.length || !predicted.length) return;
+
+        Plotly.react(mainChart, [
+            { name: 'Actual', x: actual.map(r => r.datetime), y: actual.map(r => r.value), mode: 'lines', line: { color: '#1d4ed8', width: 2 } },
+            { name: 'Predicted', x: predicted.map(r => r.datetime), y: predicted.map(r => r.value), mode: 'lines', line: { color: '#ea580c', width: 2 } }
+        ], {
+            margin: { t: 20, r: 12, l: 55, b: 45 },
+            template: 'plotly_white',
+            hovermode: 'x unified',
+            yaxis: { title: 'Demand (MWh)' },
+            xaxis: { title: 'Timestamp' }
+        }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderErrorHistogram(residuals) {
+        const vals = Array.isArray(residuals) ? residuals : [];
+        if (errorChart && errorChart.dataset.staticChart === '1') return;
+        Plotly.react(errorChart, [
+            {
+                type: 'histogram',
+                x: vals,
+                marker: { color: '#0ea5e9', line: { color: '#0369a1', width: 1 } },
+                nbinsx: 18,
+                name: 'Residuals'
+            }
+        ], {
+            margin: { t: 20, r: 12, l: 55, b: 45 },
+            template: 'plotly_white',
+            xaxis: { title: 'Residual (MWh)' },
+            yaxis: { title: 'Count' }
+        }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderComparisonChart(comparison) {
+        const rows = Array.isArray(comparison) ? comparison : [];
+        if (comparisonChart && comparisonChart.dataset.staticChart === '1') return;
+        const models = rows.map(r => r.model);
+        const mae = rows.map(r => Number(r.mae || 0));
+        const rmse = rows.map(r => Number(r.rmse || 0));
+        const bias = rows.map(r => Number(r.bias || 0));
+
+        Plotly.react(comparisonChart, [
+            { type: 'bar', name: 'MAE (MWh)', x: models, y: mae, marker: { color: '#1d4ed8' } },
+            { type: 'bar', name: 'RMSE (MWh)', x: models, y: rmse, marker: { color: '#16a34a' } },
+            { type: 'bar', name: 'Bias (MWh)', x: models, y: bias, marker: { color: '#f59e0b' } }
+        ], {
+            barmode: 'group',
+            margin: { t: 20, r: 12, l: 55, b: 45 },
+            template: 'plotly_white',
+            yaxis: { title: 'MWh' }
+        }, { responsive: true, displayModeBar: false });
+    }
+
+    function renderTable(samples) {
+        const rows = Array.isArray(samples) ? samples : [];
+        tableBody.innerHTML = '';
+        if (!rows.length) {
+            tableBody.innerHTML = '<tr><td colspan="5">No evaluation rows found.</td></tr>';
+            return;
+        }
+
+        rows.forEach((r) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${r.datetime || ''}</td>
+                <td>${fmtNum(r.actual, 2)}</td>
+                <td>${fmtNum(r.predicted, 2)}</td>
+                <td>${fmtNum(r.abs_error, 2)}</td>
+                <td>${fmtNum(r.pct_error, 2)}%</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    }
+
+    function parseCsv(text) {
+        const lines = (text || '').trim().split(/\r?\n/).filter(Boolean);
+        if (lines.length < 2) return [];
+        const header = lines[0].split(',').map(s => s.trim());
+        const idxTs = header.findIndex(h => h.toLowerCase() === 'timestamp');
+        const idxAct = header.findIndex(h => h.toLowerCase() === 'energyconsumption');
+        const idxPred = header.findIndex(h => h.toLowerCase() === 'predictedenergy');
+        if (idxTs < 0 || idxAct < 0 || idxPred < 0) return [];
+
+        const out = [];
+        for (let i = 1; i < lines.length; i++) {
+            const parts = lines[i].split(',');
+            const ts = (parts[idxTs] || '').trim();
+            const actual = Number(parts[idxAct]);
+            const pred = Number(parts[idxPred]);
+            if (!ts || !Number.isFinite(actual) || !Number.isFinite(pred) || actual === 0) continue;
+            out.push({ datetime: ts, actual, predicted: pred });
+        }
+        return out;
+    }
+
+    async function loadCsvSeries() {
+        try {
+            const [r1, r2] = await Promise.all([
+                fetch(window.metricsConfig.csvPredUrl),
+                fetch(window.metricsConfig.csvPred24Url)
+            ]);
+            if (!r1.ok || !r2.ok) throw new Error('CSV fetch failed');
+            const [t1, t2] = await Promise.all([r1.text(), r2.text()]);
+            csvRowsCache.model_no_timeseries = parseCsv(t1);
+            csvRowsCache.model_24 = parseCsv(t2);
+        } catch (e) {
+            csvRowsCache.model_24 = [];
+            csvRowsCache.model_no_timeseries = [];
+        }
+    }
+
+    function renderMainChartFromCsv() {
+        if (!mainChart || !window.Plotly) return;
+        const selected = modelSelect && modelSelect.value === 'model_no_timeseries' ? 'model_no_timeseries' : 'model_24';
+        const rows = csvRowsCache[selected] || [];
+        if (!rows.length) {
+            mainChart.innerHTML = '<div class="chart-placeholder">CSV data unavailable for selected model.</div>';
+            return;
+        }
+
+        Plotly.react(mainChart, [
+            {
+                name: 'Actual',
+                x: rows.map(r => r.datetime),
+                y: rows.map(r => r.actual),
+                mode: 'lines',
+                line: { color: '#1d4ed8', width: 2 }
+            },
+            {
+                name: 'Predicted',
+                x: rows.map(r => r.datetime),
+                y: rows.map(r => r.predicted),
+                mode: 'lines',
+                line: { color: '#ea580c', width: 2 }
+            }
+        ], {
+            margin: { t: 20, r: 12, l: 55, b: 45 },
+            template: 'plotly_white',
+            hovermode: 'x unified',
+            yaxis: { title: 'Demand (MWh)' },
+            xaxis: { title: 'Timestamp' }
+        }, { responsive: true, displayModeBar: false });
+    }
+
+    async function fetchMetrics() {
+        const params = new URLSearchParams({
+            model_choice: modelSelect.value
+        });
+
+        refreshBtn.disabled = true;
+        try {
+            const resp = await fetch(apiUrl + '?' + params.toString(), { method: 'GET' });
+            if (!resp.ok) throw new Error('Server ' + resp.status);
+            const data = await resp.json();
+
+            const m = data.metrics || {};
+            setText('metricMaeValue', `${fmtNum(m.mae, 2)} MWh`);
+            setText('metricRmseValue', `${fmtNum(m.rmse, 2)} MWh`);
+            setText('metricMapeValue', `${fmtNum(m.mape, 2)}%`);
+            setText('metricR2Value', fmtNum(m.r2, 4));
+            setText('metricBiasValue', `${fmtNum(m.bias, 2)} MWh`);
+            setText('metricPeakErrValue', `${fmtNum(m.peak_error, 2)} MWh`);
+
+            const s = data.summary || {};
+            setText('bestModelValue', s.best_model || '-');
+            setText('peakErrorWindowValue', s.peak_error_window || '-');
+            setText('forecastStabilityValue', s.forecast_stability || '-');
+            setText('generalizationValue', s.generalization_quality || '-');
+            setText('recommendedUsageValue', s.recommended_usage || '-');
+
+            renderMainChartFromCsv();
+            renderErrorHistogram((data.series && data.series.residuals) || []);
+            renderComparisonChart(data.comparison || []);
+            renderTable(data.samples || []);
+
+        } catch (err) {
+            console.error('Failed to fetch real metrics', err);
+            tableBody.innerHTML = '<tr><td colspan="5">Failed to load metrics.</td></tr>';
+        } finally {
+            refreshBtn.disabled = false;
+        }
+    }
+
+    refreshBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        fetchMetrics();
+    });
+    modelSelect.addEventListener('change', fetchMetrics);
+
+    loadCsvSeries().then(fetchMetrics);
+});
+</script>
+{% endblock %}

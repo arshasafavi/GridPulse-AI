@@ -1,0 +1,526 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+
+{% block title %}Forecasting | GridPulse AI{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div class="row g-3 align-items-center">
+        <div class="col-12 col-xl-5">
+            <h1 class="page-title">Forecasting</h1>
+            <p class="page-subtitle">
+                AI-powered short-term energy demand forecasts with horizon-aware summaries and operational insights.
+            </p>
+        </div>
+
+        <div class="col-12 col-xl-7">
+            <div class="row g-2 justify-content-xl-end">
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <select id="rangeSelect" class="form-select glass-chip">
+                        <option value="6">6 Hours</option>
+                        <option value="12">12 Hours</option>
+                        <option value="24" selected>24 Hours</option>
+                        <option value="48">48 Hours</option>
+                        <option value="72">72 Hours</option>
+                        <option value="96">4 Days</option>
+                        <option value="168">7 Days</option>
+                        <option value="240">10 Days</option>
+                        <option value="336">2 Weeks</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <button id="forecastingApplyBtn" class="btn btn-primary w-100 action-btn d-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-stars"></i>
+                        Generate
+                    </button>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <div class="glass-chip d-flex align-items-center justify-content-center">
+                        <small id="forecastingModelLabel" class="text-muted fw-semibold">Model: -</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-primary">
+            <div class="metric-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div class="metric-label">Max Forecast Demand</div>
+            <div id="forecastingMaxDemand" class="metric-value">- MWh</div>
+            <div class="metric-trend">Highest expected point</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-success">
+            <div class="metric-icon">
+                <i class="bi bi-graph-down"></i>
+            </div>
+            <div class="metric-label">Min Forecast Demand</div>
+            <div id="forecastingMinDemand" class="metric-value">- MWh</div>
+            <div class="metric-trend">Lowest expected point</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-warning">
+            <div class="metric-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div class="metric-label">Peak Time</div>
+            <div id="forecastingPeakTime" class="metric-value">-</div>
+            <div class="metric-trend">Expected daily peak</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card-soft metric-card metric-info">
+            <div class="metric-icon">
+                <i class="bi bi-lightning"></i>
+            </div>
+            <div class="metric-label">Forecast Average</div>
+            <div id="forecastingAvgDemand" class="metric-value">- MWh</div>
+            <div class="metric-trend">Average over selected horizon</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Forecast Horizon Chart</h2>
+                <p class="section-subtitle">
+                    Predicted energy demand over the selected forecast horizon.
+                </p>
+            </div>
+            <div id="forecastingMainChart" class="chart-host">
+                <div class="chart-placeholder">Forecasting chart</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Demand Drivers</h2>
+                <p class="section-subtitle">
+                    Relative contribution of forecast-driving variables.
+                </p>
+            </div>
+            <div id="forecastDriversChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Calculated_Feature_Importance.html' %}"
+                    title="Calculated Feature Importance"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:440px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card-soft section-card">
+            <div class="mb-3">
+                <h2 class="section-title">Forecast Status Distribution</h2>
+                <p class="section-subtitle">
+                    Historical load-state distribution from archived data (not forecast output).
+                </p>
+            </div>
+            <div id="forecastStatusChart" class="chart-host" data-static-chart="1">
+                <iframe
+                    src="{% static 'dashboard/charts/Energy_Range_Pie.html' %}"
+                    title="Energy Range Pie"
+                    loading="lazy"
+                    scrolling="no"
+                    style="width:100%;height:100%;min-height:440px;border:0;border-radius:12px;background:#fff;overflow:hidden;"
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card-soft table-card">
+            <div class="mb-3">
+                <h2 class="section-title">Forecast Output Table</h2>
+                <p class="section-subtitle">
+                    Exportable forecast values for downstream analysis and presentation. Table columns match energy_data.csv schema.
+                </p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table custom-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>DateTime</th>
+                            <th>Predicted Demand</th>
+                            <th>Temperature (°C)</th>
+                            <th>Precip. (mm)</th>
+                            <th>Wind (m/s)</th>
+                            <th>Humidity (%)</th>
+                            <th>Hour</th>
+                            <th>Weekday</th>
+                            <th>Holiday</th>
+                        </tr>
+                    </thead>
+                    <tbody id="forecastTableBodyForecasting">
+                        <!-- populated by forecast API -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block vendor_js %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    console.debug('forecasting extra_js DOMContentLoaded');
+    if (!window.Plotly) return;
+
+    // Placeholder content removed; charts will be updated dynamically after API fetch.
+    window.updateForecastDriversChart = function(preds) {
+        try {
+            const target = document.getElementById('forecastDriversChart');
+            if (!target || !window.Plotly) return;
+            if (target.dataset.staticChart === '1') return;
+            const rows = Array.isArray(preds) ? preds : (preds.predictions || []);
+            if (!rows.length) {
+                target.innerHTML = '<div class="mini-chart-placeholder">No data</div>';
+                return;
+            }
+
+            // compute Pearson correlation-like score for numeric features
+            function pearson(xs, ys) {
+                const n = xs.length; if (n === 0) return 0;
+                const mean = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+                const mx = mean(xs), my = mean(ys);
+                let num = 0, sx = 0, sy = 0;
+                for (let i=0;i<n;i++){ const dx=xs[i]-mx, dy=ys[i]-my; num+=dx*dy; sx+=dx*dx; sy+=dy*dy; }
+                const den = Math.sqrt(sx*sy); if (den===0) return 0; return num/den;
+            }
+
+            const y = rows.map(r=>Number(r.predicted_demand||0));
+            const temps = rows.map(r=> r.temperature!==undefined && r.temperature!==null ? Number(r.temperature) : NaN ).filter(v=>!Number.isNaN(v));
+            const tempsIdx = rows.map((r,i)=> r.temperature!==undefined && r.temperature!==null ? i : -1 ).filter(i=>i>=0);
+            const tempsY = tempsIdx.map(i=>y[i]);
+            const tempScore = temps.length && tempsY.length ? Math.abs(pearson(temps, tempsY)) : 0;
+
+            const hums = rows.map(r=> r.humidity!==undefined && r.humidity!==null ? Number(r.humidity) : NaN ).filter(v=>!Number.isNaN(v));
+            const humsIdx = rows.map((r,i)=> r.humidity!==undefined && r.humidity!==null ? i : -1 ).filter(i=>i>=0);
+            const humsY = humsIdx.map(i=>y[i]);
+            const humScore = hums.length && humsY.length ? Math.abs(pearson(hums, humsY)) : 0;
+
+            const winds = rows.map(r=> r.wind_speed!==undefined && r.wind_speed!==null ? Number(r.wind_speed) : NaN ).filter(v=>!Number.isNaN(v));
+            const windsIdx = rows.map((r,i)=> r.wind_speed!==undefined && r.wind_speed!==null ? i : -1 ).filter(i=>i>=0);
+            const windsY = windsIdx.map(i=>y[i]);
+            const windScore = winds.length && windsY.length ? Math.abs(pearson(winds, windsY)) : 0;
+
+            // hour influence: group by hour and compute std dev of group means
+            const hoursMap = {};
+            rows.forEach(r=>{ const h = r.hour!==undefined && r.hour!==null ? Number(r.hour) : (new Date(r.datetime)).getHours(); hoursMap[h]=hoursMap[h]||[]; hoursMap[h].push(Number(r.predicted_demand||0)); });
+            const hourMeans = Object.values(hoursMap).map(arr=> arr.reduce((a,b)=>a+b,0)/arr.length );
+            const hourStd = hourMeans.length ? Math.sqrt(hourMeans.reduce((s,v)=>s+(v-(hourMeans.reduce((a,b)=>a+b,0)/hourMeans.length))**2,0)/hourMeans.length) : 0;
+            const hourScore = hourStd ? hourStd / (Math.max(...hourMeans)||1) : 0;
+
+            // holiday influence: difference of means
+            const holYes = rows.filter(r=>r.is_holiday).map(r=>Number(r.predicted_demand||0));
+            const holNo = rows.filter(r=>!r.is_holiday).map(r=>Number(r.predicted_demand||0));
+            const holScore = (holYes.length && holNo.length) ? Math.abs((holYes.reduce((a,b)=>a+b,0)/holYes.length) - (holNo.reduce((a,b)=>a+b,0)/holNo.length)) / (Math.max(...y)||1) : 0;
+
+            const raw = [tempScore, hourScore, holScore, humScore, windScore];
+            const labels = ['Temperature','Hour','Holiday','Humidity','Wind'];
+            const sum = raw.reduce((a,b)=>a+b,0) || 1;
+            const perc = raw.map(v=> Math.round((v/sum)*100));
+
+            Plotly.newPlot(target, [{ x: labels, y: perc, type: 'bar' }], {
+                margin: { t: 10, r: 10, b: 45, l: 40 }, paper_bgcolor: 'white', plot_bgcolor: 'white', xaxis: { title: 'Feature' }, yaxis: { title: 'Importance %' }
+            }, { responsive: true, displayModeBar: false });
+        } catch (err) {
+            console.debug('updateForecastDriversChart error', err);
+        }
+    }
+
+    window.updateForecastStatusChart = function(preds) {
+        try {
+            const target = document.getElementById('forecastStatusChart');
+            if (!target || !window.Plotly) return;
+            if (target.dataset.staticChart === '1') return;
+            const rows = Array.isArray(preds) ? preds : (preds.predictions || []);
+            if (!rows.length) {
+                target.innerHTML = '<div class="mini-chart-placeholder">No data</div>';
+                return;
+            }
+            const counts = {};
+            rows.forEach(r=>{ const s = r.status || 'Unknown'; counts[s] = (counts[s]||0)+1; });
+            const labels = Object.keys(counts);
+            const values = labels.map(l=>counts[l]);
+            Plotly.newPlot(target, [{ labels: labels, values: values, type: 'pie' }], { margin: { t:10,r:10,b:10,l:10 }, paper_bgcolor:'white' }, { responsive: true, displayModeBar:false });
+        } catch (err) { console.debug('updateForecastStatusChart error', err); }
+    }
+});
+</script>
+<script>
+// Forecasting page: connect to API and render table matching energy_data.csv
+(function () {
+    console.debug('forecasting page script init');
+    function ensureConfig() {
+        if (!window.dashboardConfig) {
+            window.dashboardConfig = window.dashboardConfig || {};
+            window.dashboardConfig.city = window.dashboardConfig.city || "Izmir";
+            window.dashboardConfig.forecastApiUrl = window.dashboardConfig.forecastApiUrl || "{% url 'api:forecast' %}";
+            window.dashboardConfig.forecastExportUrl = window.dashboardConfig.forecastExportUrl || "{% url 'api:forecast_export_csv' %}";
+            window.dashboardConfig.overviewApiUrl = window.dashboardConfig.overviewApiUrl || "{% url 'api:overview' %}";
+            window.dashboardConfig.metricsApiUrl = window.dashboardConfig.metricsApiUrl || "{% url 'api:metrics' %}";
+        }
+    }
+
+    function pick(v, keys, fallback = '-') {
+        for (const k of keys) if (v && v[k] !== undefined && v[k] !== null) return v[k];
+        return fallback;
+    }
+
+    async function loadForecasting() {
+        ensureConfig();
+        const horizon = Number((document.getElementById('rangeSelect')?.value) || 24);
+        console.debug('loadForecasting start', { horizon });
+
+        try {
+            const data = await fetchForecast(horizon, 'next', null, null, horizon);
+            const rows = (data && data.predictions) ? data.predictions : (data || []);
+            console.debug('fetchForecast returned', { count: rows.length, sample: rows[0] });
+            window.forecastingsCache = rows;
+            updateForecastingKpis(rows);
+            updateForecastingModel(data, rows);
+            renderForecastingPage(1);
+            try {
+                // update forecasting page chart with the fetched predictions
+                if (typeof updateForecastingChart === 'function') {
+                    console.debug('calling updateForecastingChart');
+                    updateForecastingChart(rows);
+                } else if (window.renderOverviewForecastChart) {
+                    console.debug('calling renderOverviewForecastChart fallback');
+                    window.renderOverviewForecastChart({ predictions: rows });
+                }
+                // update drivers and status charts as well
+                try { if (typeof updateForecastDriversChart === 'function') { console.debug('calling updateForecastDriversChart'); updateForecastDriversChart(rows); } } catch(e){console.debug(e)}
+                try { if (typeof updateForecastStatusChart === 'function') { console.debug('calling updateForecastStatusChart'); updateForecastStatusChart(rows); } } catch(e){console.debug(e)}
+            } catch (e) { console.debug('Updating forecasting chart failed', e); }
+        } catch (e) {
+            console.error('Forecasting load failed:', e);
+            const tbody = document.getElementById('forecastTableBodyForecasting');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Failed to load forecast</td></tr>`;
+        }
+    }
+
+    function updateForecastingKpis(rows) {
+        const maxEl = document.getElementById('forecastingMaxDemand');
+        const minEl = document.getElementById('forecastingMinDemand');
+        const peakEl = document.getElementById('forecastingPeakTime');
+        const avgEl = document.getElementById('forecastingAvgDemand');
+
+        if (!Array.isArray(rows) || !rows.length) {
+            if (maxEl) maxEl.textContent = '- MWh';
+            if (minEl) minEl.textContent = '- MWh';
+            if (peakEl) peakEl.textContent = '-';
+            if (avgEl) avgEl.textContent = '- MWh';
+            return;
+        }
+
+        const demands = rows.map((r) => Number(r.predicted_demand || 0));
+        const maxVal = Math.max(...demands);
+        const minVal = Math.min(...demands);
+        const avgVal = demands.reduce((s, v) => s + v, 0) / demands.length;
+        const peakRow = rows.reduce((a, b) => (Number(a.predicted_demand || 0) >= Number(b.predicted_demand || 0) ? a : b));
+
+        if (maxEl) maxEl.textContent = `${formatNumber(Math.round(maxVal))} MWh`;
+        if (minEl) minEl.textContent = `${formatNumber(Math.round(minVal))} MWh`;
+        if (peakEl) peakEl.textContent = formatHourLabel(peakRow.datetime);
+        if (avgEl) avgEl.textContent = `${formatNumber(Math.round(avgVal))} MWh`;
+    }
+
+    function updateForecastingModel(data, rows) {
+        const modelEl = document.getElementById('forecastingModelLabel');
+        if (!modelEl) return;
+        const modelUsed = (data && data.model_used) || (rows && rows[0] && rows[0].model_used) || '-';
+        modelEl.textContent = `Model: GRU`;
+    }
+
+    // Render fetched predictions into the forecastingMainChart element
+    function updateForecastingChart(predictions) {
+        try {
+            const target = document.getElementById('forecastingMainChart');
+            if (!target || !window.Plotly) return;
+            const preds = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
+            const x = preds.map((item) => formatHourLabel(item.datetime));
+            const y = preds.map((item) => item.predicted_demand);
+
+            Plotly.newPlot(
+                target,
+                [
+                    { x: x, y: y, type: 'scatter', mode: 'lines+markers', name: 'Predicted', line: { width: 3 } }
+                ],
+                {
+                    margin: { t: 10, r: 10, b: 45, l: 55 },
+                    paper_bgcolor: 'white',
+                    plot_bgcolor: 'white',
+                    legend: { orientation: 'h' },
+                    xaxis: { title: 'Time' },
+                    yaxis: { title: 'Predicted Demand (MWh)' }
+                },
+                { responsive: true, displayModeBar: false }
+            );
+        } catch (err) {
+            console.debug('updateForecastingChart error', err);
+        }
+    }
+
+    function renderForecastingPage(page) {
+        const tbody = document.getElementById('forecastTableBodyForecasting');
+        if (!tbody) return;
+        const pageSize = window.forecastingPageSize || 24;
+        const rows = window.forecastingsCache || [];
+        const total = rows.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const current = Math.min(Math.max(1, page || 1), totalPages);
+
+        tbody.innerHTML = '';
+        if (!total) {
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4">No forecast data available</td></tr>`;
+            renderForecastingPagination(0,0,0);
+            return;
+        }
+
+        const start = (current - 1) * pageSize;
+        const pageItems = rows.slice(start, start + pageSize);
+        pageItems.forEach(r => {
+            const dt = pick(r, ['datetime','Timestamp','time'], '');
+            const demand = pick(r, ['predicted_demand','EnergyConsumption','prediction'], 0);
+            const temp = pick(r, ['temperature','tavg','t'], '-');
+            // expanded fallbacks for precipitation and wind
+            const prcp = pick(r, ['precipitation','prcp','precip','prc'], '-');
+            const wind = pick(r, ['wind_speed','wspd','wind','ws','wspd_mps'], '-');
+            const humidity = pick(r, ['humidity','hum'], '-');
+            let hour = pick(r, ['hour','hr'], null);
+            let weekday = pick(r, ['weekday','day','dow'], null);
+            const hol = pick(r, ['is_holiday','holiday'], false);
+
+            // derive hour and weekday from datetime when missing
+            if ((hour === null || hour === '-' || hour === '') && dt) {
+                const d = new Date(dt);
+                if (!Number.isNaN(d.getTime())) hour = d.getHours();
+            }
+            if ((!weekday || weekday === '-' || weekday === '') && dt) {
+                const d = new Date(dt);
+                if (!Number.isNaN(d.getTime())) weekday = d.toLocaleString(undefined, { weekday: 'long' });
+            }
+
+            const tOut = (temp !== '-' && temp !== null) ? `${Math.round(Number(temp))}°C` : '-';
+            const hOut = (humidity !== '-' && humidity !== null) ? `${Math.round(Number(humidity))}%` : '-';
+            const hourOut = (hour === null || hour === undefined || hour === '') ? '-' : String(hour);
+            const weekdayOut = (weekday === null || weekday === undefined || weekday === '') ? '-' : String(weekday);
+
+            const prcpOut = (prcp !== '-' && prcp !== null) ? Number(prcp).toFixed(2) : '-';
+            const windOut = (wind !== '-' && wind !== null) ? Number(wind).toFixed(2) : '-';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${(new Date(dt)).toLocaleString()}</td>
+                <td>${Number(demand).toLocaleString()} MWh</td>
+                <td>${tOut}</td>
+                <td>${prcpOut}</td>
+                <td>${windOut}</td>
+                <td>${hOut}</td>
+                <td>${hourOut}</td>
+                <td>${weekdayOut}</td>
+                <td>${hol ? 'Yes' : 'No'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        renderForecastingPagination(current, totalPages, total);
+    }
+
+    function renderForecastingPagination(current, totalPages, totalItems) {
+        const tbody = document.getElementById('forecastTableBodyForecasting');
+        if (!tbody) return;
+        const table = tbody.closest('table');
+        if (!table) return;
+
+        let container = document.getElementById('forecastingPaginationControls');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'forecastingPaginationControls';
+            container.className = 'd-flex justify-content-between align-items-center mt-2';
+            table.parentNode.insertBefore(container, table.nextSibling);
+        }
+
+        if (!totalItems) { container.innerHTML = ''; return; }
+
+        const pageSize = window.forecastingPageSize || 24;
+        const prevDisabled = current <= 1 ? 'disabled' : '';
+        const nextDisabled = current >= totalPages ? 'disabled' : '';
+
+        container.innerHTML = `
+            <div class="d-flex align-items-center">
+                <div class="me-3">Showing ${(current-1)*pageSize + 1} - ${Math.min(current*pageSize, totalItems)} of ${totalItems}</div>
+                <div class="me-3">Page size:
+                    <select id="forecastingPageSizeSelect" class="form-select form-select-sm d-inline-block ms-2" style="width: auto;">
+                        <option value="12" ${pageSize==12? 'selected':''}>12</option>
+                        <option value="24" ${pageSize==24? 'selected':''}>24</option>
+                        <option value="48" ${pageSize==48? 'selected':''}>48</option>
+                    </select>
+                </div>
+            </div>
+            <div class="d-flex align-items-center">
+                <button id="forecastingPrevBtn" class="btn btn-sm btn-outline-primary me-2" ${prevDisabled}>Prev</button>
+                <div id="forecastingPageNumbers" class="btn-group me-2" role="group"></div>
+                <span class="mx-1">Page ${current} / ${totalPages}</span>
+                <button id="forecastingNextBtn" class="btn btn-sm btn-outline-primary ms-2" ${nextDisabled}>Next</button>
+            </div>
+        `;
+
+        document.getElementById('forecastingPrevBtn').onclick = () => { if (current>1) renderForecastingPage(current-1); };
+        document.getElementById('forecastingNextBtn').onclick = () => { if (current<totalPages) renderForecastingPage(current+1); };
+
+        const pageSizeSelect = document.getElementById('forecastingPageSizeSelect');
+        if (pageSizeSelect) pageSizeSelect.onchange = () => { window.forecastingPageSize = Number(pageSizeSelect.value)||24; renderForecastingPage(1); };
+
+        const pageNumbersEl = document.getElementById('forecastingPageNumbers');
+        if (pageNumbersEl) {
+            pageNumbersEl.innerHTML = '';
+            const maxButtons = 7;
+            let startPage = Math.max(1, current - Math.floor(maxButtons/2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+            if (endPage - startPage + 1 < maxButtons) startPage = Math.max(1, endPage - maxButtons + 1);
+            for (let p = startPage; p <= endPage; p++) {
+                const btn = document.createElement('button');
+                btn.className = `btn btn-sm ${p===current? 'btn-primary':'btn-outline-secondary'}`;
+                btn.textContent = String(p);
+                btn.onclick = (() => { const pageNum = p; return () => renderForecastingPage(pageNum); })();
+                pageNumbersEl.appendChild(btn);
+            }
+        }
+    }
+
+    // Wire apply button
+    document.getElementById('forecastingApplyBtn')?.addEventListener('click', () => loadForecasting());
+
+    // initial load
+    window.forecastingPageSize = window.forecastingPageSize || 24;
+    loadForecasting();
+})();
+</script>
+{% endblock %}
