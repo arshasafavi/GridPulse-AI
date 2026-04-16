@@ -9,6 +9,9 @@ import requests
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR / "models"
 DATA_PATH = BASE_DIR / "data" / "energy_data.csv"
+# Model-specific consumptions CSVs — more recent data used for accurate lag features
+_CONS_24_PATH = MODEL_DIR / "model_24" / "source" / "consumptions.csv"
+_CONS_NTS_PATH = MODEL_DIR / "model_no_timeseries" / "source" / "consumptions.csv"
 
 IZMIR_LAT = 38.4237
 IZMIR_LON = 27.1428
@@ -52,6 +55,9 @@ _ts24_loaded = False
 
 _weather_means_cache = None
 _history_cache = None
+# Cache of the warmed-up working df: (warmup_end_ts, working_df)
+# Avoids re-running the expensive per-hour warmup loop on every API request.
+_ts24_warmup_cache = None
 
 
 def _load_nts_artifacts():
@@ -112,18 +118,54 @@ def _load_ts24_artifacts():
     _ts24_loaded = True
 
 
-def _load_history():
+_nts_history_cache = None
+
+
+def _load_history(cons_path=None):
+    """Load Izmir history, merging deep energy_data.csv with the more recent
+    model-specific consumptions.csv so lag/rolling features are as fresh as possible."""
     global _history_cache
-    if _history_cache is not None:
-        return _history_cache.copy()
-    df = pd.read_csv(DATA_PATH)
-    df["Timestamp"] = pd.to_datetime(df["Timestamp"])
-    if "city" not in df.columns:
-        df["city"] = "Izmir"
-    df = df[df["city"].astype(str).str.lower() == "izmir"].copy()
-    df = df.sort_values("Timestamp").drop_duplicates("Timestamp").reset_index(drop=True)
-    _history_cache = df
+    cache_key = str(cons_path) if cons_path else "default"
+    cached = _history_cache if cache_key == "default" else None
+
+    if cached is not None:
+        return cached.copy()
+
+    # 1. Base: full history from energy_data.csv
+    df_base = pd.read_csv(DATA_PATH)
+    df_base["Timestamp"] = pd.to_datetime(df_base["Timestamp"])
+    if "city" not in df_base.columns:
+        df_base["city"] = "Izmir"
+    df_base = df_base[df_base["city"].astype(str).str.lower() == "izmir"].copy()
+
+    # 2. Extension: recent data from the model-specific consumptions.csv (if available)
+    ext_path = cons_path if cons_path else _CONS_24_PATH
+    if Path(ext_path).exists():
+        df_ext = pd.read_csv(ext_path)
+        df_ext["Timestamp"] = pd.to_datetime(df_ext["Timestamp"])
+        if "city" not in df_ext.columns:
+            df_ext["city"] = "Izmir"
+        df_ext = df_ext[df_ext["city"].astype(str).str.lower() == "izmir"].copy()
+        # Merge: base provides deep history, ext overrides/extends with more recent rows
+        df = pd.concat([df_base, df_ext], ignore_index=True)
+    else:
+        df = df_base
+
+    df = df.sort_values("Timestamp").drop_duplicates("Timestamp", keep="last").reset_index(drop=True)
+
+    if cache_key == "default":
+        _history_cache = df
     return df.copy()
+
+
+def _load_nts_history():
+    """Same merge logic but using the model_no_timeseries consumptions.csv."""
+    global _nts_history_cache
+    if _nts_history_cache is not None:
+        return _nts_history_cache.copy()
+    result = _load_history(cons_path=_CONS_NTS_PATH)
+    _nts_history_cache = result
+    return result.copy()
 
 
 def get_historical_weather_means():
@@ -360,6 +402,17 @@ def _merge_online_weather(df, start_ts, end_ts):
     return merged
 
 
+def _safe_last_energy(working_df):
+    """Return last finite energy value, defaulting to 0.0 if unavailable."""
+    if "EnergyConsumption" not in working_df.columns:
+        return 0.0
+    s = pd.to_numeric(working_df["EnergyConsumption"], errors="coerce")
+    s = s[np.isfinite(s)]
+    if len(s):
+        return float(s.iloc[-1])
+    return 0.0
+
+
 def predict_horizon_hourly(start_ts, horizon_hours, city="Izmir", model_choice=None):
     """
     Predict hourly demand for Izmir.
@@ -396,33 +449,113 @@ def predict_horizon_hourly(start_ts, horizon_hours, city="Izmir", model_choice=N
         raise RuntimeError("model_no_timeseries artifacts are not available")
 
     history = _load_history()
+    # Capture the last real-data timestamp BEFORE extending with forecast weather.
+    # This is the boundary where the warmup pass must start.
+    _real_history_end = history["Timestamp"].max()
     target_range = pd.date_range(start=start_ts, periods=horizon, freq="h")
 
     max_target = target_range.max()
-    if max_target > history["Timestamp"].max():
-        history = _merge_online_weather(history, history["Timestamp"].max() + pd.Timedelta(hours=1), max_target)
+    if max_target > _real_history_end:
+        history = _merge_online_weather(history, _real_history_end + pd.Timedelta(hours=1), max_target)
 
     preds = []
 
+    # Enough history rows for all lags (max=336) + sequence window (24) + buffer
+    # Keep rows needed for max lag (336) + sequence window (24) + buffer
+    _KEEP_HOURS = 400
+
+    def _ts24_predict_one(working_df, ts):
+        """Predict a single timestamp and write prediction back into working_df."""
+        # Trim rows older than ts - KEEP_HOURS to keep dataframe small but correct
+        needed_from = ts - pd.Timedelta(hours=_KEEP_HOURS)
+        if working_df["Timestamp"].min() < needed_from:
+            working_df = working_df[working_df["Timestamp"] >= needed_from].reset_index(drop=True)
+        fallback_energy = _safe_last_energy(working_df)
+        means = get_historical_weather_means().get(pd.to_datetime(ts).hour, {})
+
+        # Some weather API responses may miss individual hours. Ensure target ts exists
+        # so we always return exactly `horizon` predictions.
+        if not (working_df["Timestamp"] == ts).any():
+            fill_row = {
+                "Timestamp": pd.to_datetime(ts),
+                "city": "Izmir",
+                "EnergyConsumption": fallback_energy,
+                "tavg": float(means.get("tavg", 14.0)),
+                "prcp": float(means.get("prcp", 0.0)),
+                "wspd": float(means.get("wspd", 2.0)),
+                "humidity": float(means.get("humidity", 55.0)),
+            }
+            working_df = pd.concat([working_df, pd.DataFrame([fill_row])], ignore_index=True)
+            working_df = (
+                working_df.sort_values("Timestamp")
+                .drop_duplicates("Timestamp", keep="last")
+                .reset_index(drop=True)
+            )
+
+        feat_df = _build_ts24_feature_frame(working_df)
+        idx_match = feat_df.index[feat_df["Timestamp"] == ts]
+        if len(idx_match) == 0:
+            return working_df, fallback_energy
+        i = int(idx_match[0])
+        if i < SEQ_LEN_24:
+            raw = pd.to_numeric(working_df.loc[working_df["Timestamp"] == ts, "EnergyConsumption"], errors="coerce").iloc[0]
+            pred_val = float(raw) if np.isfinite(raw) else fallback_energy
+        else:
+            seq_features = feat_df.loc[i - SEQ_LEN_24: i - 1, _ts24_features].copy()
+            # When working windows are trimmed, early rolling/lag rows can still carry
+            # NaN/Inf. Fill locally so model inference stays dynamic instead of falling
+            # back to a constant value for several initial hours.
+            seq_features = seq_features.replace([np.inf, -np.inf], np.nan).ffill().bfill().fillna(0)
+            x_seq = _ts24_scaler_x.transform(seq_features)
+            if not np.isfinite(x_seq).all():
+                pred_val = fallback_energy
+                working_df.loc[working_df["Timestamp"] == ts, "EnergyConsumption"] = pred_val
+                return working_df, pred_val
+            x_seq = x_seq.reshape(1, SEQ_LEN_24, len(_ts24_features))
+            pred_scaled = _ts24_model.predict(x_seq, verbose=0)
+            pred_val = float(np.expm1(_ts24_scaler_y.inverse_transform(pred_scaled))[0][0])
+            if not np.isfinite(pred_val):
+                pred_val = fallback_energy
+        working_df.loc[working_df["Timestamp"] == ts, "EnergyConsumption"] = pred_val
+        return working_df, pred_val
+
     if use_ts24:
-        working = history.copy()
-        for ts in target_range:
-            feat_df = _build_ts24_feature_frame(working)
-            idx_match = feat_df.index[feat_df["Timestamp"] == ts]
-            if len(idx_match) == 0:
-                continue
-            i = int(idx_match[0])
+        global _ts24_warmup_cache
+        hist_end = _real_history_end
 
-            if i < SEQ_LEN_24:
-                row = working.loc[working["Timestamp"] == ts].iloc[0]
-                pred_val = float(row.get("EnergyConsumption", 0))
+        # Warmup: fill predictions for every hour between history end and start_ts
+        # so lag/rolling features are based on iteratively predicted values rather
+        # than flat ffill constants. Results are cached to avoid re-running on
+        # every API request.
+        if start_ts > hist_end + pd.Timedelta(hours=1):
+            warmup_end_needed = start_ts - pd.Timedelta(hours=1)
+
+            cached_end, cached_working = _ts24_warmup_cache if _ts24_warmup_cache else (None, None)
+
+            if cached_end is not None and cached_end >= warmup_end_needed:
+                # Cache already covers everything we need — use it directly
+                working = cached_working.copy()
             else:
-                x_seq = _ts24_scaler_x.transform(feat_df.loc[i - SEQ_LEN_24 : i - 1, _ts24_features])
-                x_seq = x_seq.reshape(1, SEQ_LEN_24, len(_ts24_features))
-                pred_scaled = _ts24_model.predict(x_seq, verbose=0)
-                pred_val = float(np.expm1(_ts24_scaler_y.inverse_transform(pred_scaled))[0][0])
+                # Start from cache or fresh history, then run remaining warmup
+                if cached_end is not None and cached_end > hist_end:
+                    working = cached_working.copy()
+                    resume_from = cached_end + pd.Timedelta(hours=1)
+                else:
+                    working = history.copy()
+                    resume_from = hist_end + pd.Timedelta(hours=1)
 
-            working.loc[working["Timestamp"] == ts, "EnergyConsumption"] = pred_val
+                warmup_range = pd.date_range(start=resume_from, end=warmup_end_needed, freq="h")
+                for wts in warmup_range:
+                    working, _ = _ts24_predict_one(working, wts)
+
+                _ts24_warmup_cache = (warmup_end_needed, working.copy())
+        else:
+            working = history.copy()
+
+        for ts in target_range:
+            working, pred_val = _ts24_predict_one(working, ts)
+            if pred_val is None:
+                continue
             row = working.loc[working["Timestamp"] == ts].iloc[0]
 
             preds.append(
@@ -443,9 +576,12 @@ def predict_horizon_hourly(start_ts, horizon_hours, city="Izmir", model_choice=N
 
     # fallback / long-horizon path: model_no_timeseries
     means = get_historical_weather_means()
+    nts_history = _load_nts_history()
+    if max_target > nts_history["Timestamp"].max():
+        nts_history = _merge_online_weather(nts_history, nts_history["Timestamp"].max() + pd.Timedelta(hours=1), max_target)
     for ts in target_range:
         ts = pd.to_datetime(ts)
-        row = history.loc[history["Timestamp"] == ts]
+        row = nts_history.loc[nts_history["Timestamp"] == ts]
         if len(row):
             row = row.iloc[0]
             tavg = float(row.get("tavg", np.nan))

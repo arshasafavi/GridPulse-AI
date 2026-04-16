@@ -1,2 +1,2 @@
 GitHub Repository:
-https://github.com/your-team-name/energy-forecast
+https://github.com/arshasafavi/GridPulse-AI/
